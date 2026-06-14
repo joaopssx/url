@@ -18,11 +18,15 @@ var (
 	ErrNotFound     = errors.New("url not found")
 	ErrExpired      = errors.New("url expired")
 	ErrInvalidURL   = errors.New("invalid url")
+	ErrForbidden    = errors.New("forbidden")
 )
 
 type URLService interface {
 	Shorten(originalURL string, userID *string, expiresAt *time.Time, customCode *string) (*model.URL, error)
 	Redirect(code, ip string) (*model.URL, error)
+	GetUserURLs(userID string) ([]model.URL, error)
+	UpdateURL(code, userID string, newURL *string, newExpiry *time.Time) (*model.URL, error)
+	DeleteURL(code, userID string) error
 }
 
 type urlService struct {
@@ -118,4 +122,80 @@ func generateRandomCode(length int) (string, error) {
 		result[i] = charset[num.Int64()]
 	}
 	return string(result), nil
+}
+
+func (s *urlService) GetUserURLs(userID string) ([]model.URL, error) {
+	urls, err := s.urlRepo.ListByUser(userID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range urls {
+		urls[i].ShortURL = s.baseURL + "/" + urls[i].ShortCode
+	}
+	if urls == nil {
+		urls = []model.URL{}
+	}
+	return urls, nil
+}
+
+func (s *urlService) UpdateURL(code, userID string, newURL *string, newExpiry *time.Time) (*model.URL, error) {
+	u, err := s.urlRepo.FindByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil || u.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
+
+	if u.UserID == nil || *u.UserID != userID {
+		return nil, ErrForbidden
+	}
+
+	updates := make(map[string]interface{})
+	if newURL != nil {
+		_, err := url.ParseRequestURI(*newURL)
+		if err != nil {
+			return nil, ErrInvalidURL
+		}
+		updates["original_url"] = *newURL
+	}
+	if newExpiry != nil {
+		updates["expires_at"] = newExpiry
+	}
+
+	if len(updates) > 0 {
+		err = s.urlRepo.Update(u.ID, updates)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	updated, err := s.urlRepo.FindByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	updated.ShortURL = s.baseURL + "/" + updated.ShortCode
+	return updated, nil
+}
+
+func (s *urlService) DeleteURL(code, userID string) error {
+	u, err := s.urlRepo.FindByCode(code)
+	if err != nil {
+		return err
+	}
+	if u == nil || u.DeletedAt != nil {
+		return ErrNotFound
+	}
+	if u.UserID == nil || *u.UserID != userID {
+		return ErrForbidden
+	}
+
+	err = s.urlRepo.SoftDelete(u.ID, userID)
+	if err != nil {
+		if err.Error() == "sql: no rows in result set" {
+			return ErrNotFound
+		}
+		return err
+	}
+	return nil
 }

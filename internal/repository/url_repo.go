@@ -15,6 +15,9 @@ type URLRepository interface {
 	FindByOriginalURLAndUser(originalURL, userID string) (*model.URL, error)
 	IncrementAccessCount(id string) error
 	RecordAccess(urlID, ip string) error
+	ListByUser(userID string) ([]model.URL, error)
+	Update(id string, updates map[string]interface{}) error
+	SoftDelete(id, userID string) error
 }
 
 type urlRepository struct {
@@ -72,4 +75,62 @@ func (r *urlRepository) RecordAccess(urlID, ip string) error {
 	id := uuid.New().String()
 	_, err := r.db.Exec(query, id, urlID, time.Now().UTC(), ip)
 	return err
+}
+
+func (r *urlRepository) ListByUser(userID string) ([]model.URL, error) {
+	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at FROM urls WHERE user_id = ? AND deleted_at IS NULL`
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var urls []model.URL
+	for rows.Next() {
+		var u model.URL
+		err := rows.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt)
+		if err != nil {
+			return nil, err
+		}
+		urls = append(urls, u)
+	}
+	return urls, nil
+}
+
+func (r *urlRepository) Update(id string, updates map[string]interface{}) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	query := "UPDATE urls SET "
+	args := []interface{}{}
+	i := 1
+	for k, v := range updates {
+		if i > 1 {
+			query += ", "
+		}
+		query += k + " = ?"
+		args = append(args, v)
+		i++
+	}
+	query += " WHERE id = ?"
+	args = append(args, id)
+
+	_, err := r.db.Exec(query, args...)
+	return err
+}
+
+func (r *urlRepository) SoftDelete(id, userID string) error {
+	query := `UPDATE urls SET deleted_at = ? WHERE id = ? AND user_id = ? AND deleted_at IS NULL`
+	res, err := r.db.Exec(query, time.Now().UTC(), id, userID)
+	if err != nil {
+		return err
+	}
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }

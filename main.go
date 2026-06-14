@@ -48,6 +48,14 @@ func main() {
 	r.POST("/shorten", middleware.OptionalAuth(authService), urlHandler.Shorten)
 	r.GET("/:code", urlHandler.Redirect)
 
+	protectedRoutes := r.Group("/")
+	protectedRoutes.Use(middleware.AuthRequired(authService))
+	{
+		protectedRoutes.GET("/me/urls", urlHandler.GetUserURLs)
+		protectedRoutes.DELETE("/:code", urlHandler.DeleteURL)
+		protectedRoutes.PATCH("/:code", urlHandler.UpdateURL)
+	}
+
 	log.Printf("Starting server on port %s...", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatalf("Server failed to start: %v", err)

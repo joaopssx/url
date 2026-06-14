@@ -18,6 +18,7 @@ type URLRepository interface {
 	ListByUser(userID string) ([]model.URL, error)
 	Update(id string, updates map[string]interface{}) error
 	SoftDelete(id, userID string) error
+	GetAccessStats(urlID string) ([]model.DayStat, []model.WeekStat, []model.MonthlyStat, error)
 }
 
 type urlRepository struct {
@@ -133,4 +134,66 @@ func (r *urlRepository) SoftDelete(id, userID string) error {
 		return sql.ErrNoRows
 	}
 	return nil
+}
+
+func (r *urlRepository) GetAccessStats(urlID string) ([]model.DayStat, []model.WeekStat, []model.MonthlyStat, error) {
+	dailyQuery := `SELECT strftime('%Y-%m-%d', accessed_at) as day, COUNT(*) as count FROM url_accesses WHERE url_id = ? GROUP BY day ORDER BY day DESC LIMIT 30`
+	dailyRows, err := r.db.Query(dailyQuery, urlID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer dailyRows.Close()
+
+	var daily []model.DayStat
+	for dailyRows.Next() {
+		var s model.DayStat
+		if err := dailyRows.Scan(&s.Day, &s.Count); err != nil {
+			return nil, nil, nil, err
+		}
+		daily = append(daily, s)
+	}
+
+	weeklyQuery := `SELECT strftime('%Y-W%W', accessed_at) as week, COUNT(*) as count FROM url_accesses WHERE url_id = ? GROUP BY week ORDER BY week DESC LIMIT 12`
+	weeklyRows, err := r.db.Query(weeklyQuery, urlID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer weeklyRows.Close()
+
+	var weekly []model.WeekStat
+	for weeklyRows.Next() {
+		var s model.WeekStat
+		if err := weeklyRows.Scan(&s.Week, &s.Count); err != nil {
+			return nil, nil, nil, err
+		}
+		weekly = append(weekly, s)
+	}
+
+	monthlyQuery := `SELECT strftime('%Y-%m', accessed_at) as month, COUNT(*) as count FROM url_accesses WHERE url_id = ? GROUP BY month ORDER BY month DESC LIMIT 12`
+	monthlyRows, err := r.db.Query(monthlyQuery, urlID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	defer monthlyRows.Close()
+
+	var monthly []model.MonthlyStat
+	for monthlyRows.Next() {
+		var s model.MonthlyStat
+		if err := monthlyRows.Scan(&s.Month, &s.Count); err != nil {
+			return nil, nil, nil, err
+		}
+		monthly = append(monthly, s)
+	}
+
+	if daily == nil {
+		daily = []model.DayStat{}
+	}
+	if weekly == nil {
+		weekly = []model.WeekStat{}
+	}
+	if monthly == nil {
+		monthly = []model.MonthlyStat{}
+	}
+
+	return daily, weekly, monthly, nil
 }

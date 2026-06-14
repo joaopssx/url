@@ -31,7 +31,13 @@ func main() {
 	urlService := service.NewURLService(urlRepo, cfg.BaseURL)
 	urlHandler := handler.NewURLHandler(urlService)
 
+	statsService := service.NewStatsService(urlRepo)
+	statsHandler := handler.NewStatsHandler(statsService)
+
 	r := gin.Default()
+
+	rateLimiter := middleware.NewRateLimiter(cfg.RateLimitPerMinute)
+	r.Use(rateLimiter.Middleware())
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -47,6 +53,7 @@ func main() {
 
 	r.POST("/shorten", middleware.OptionalAuth(authService), urlHandler.Shorten)
 	r.GET("/:code", urlHandler.Redirect)
+	r.GET("/:code/stats", statsHandler.GetStats)
 
 	protectedRoutes := r.Group("/")
 	protectedRoutes.Use(middleware.AuthRequired(authService))

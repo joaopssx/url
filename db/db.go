@@ -10,7 +10,6 @@ import (
 )
 
 func InitDB(dbPath string) (*sql.DB, error) {
-	// Enable WAL mode in the connection string
 	dsn := dbPath + "?_journal_mode=WAL&_synchronous=NORMAL&cache=shared"
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {
@@ -21,13 +20,11 @@ func InitDB(dbPath string) (*sql.DB, error) {
 		return nil, err
 	}
 
-	// Double check WAL mode
 	_, err = db.Exec("PRAGMA journal_mode=WAL;")
 	if err != nil {
 		return nil, err
 	}
 
-	// Run migrations automatically
 	if err := runMigrations(db); err != nil {
 		return nil, err
 	}

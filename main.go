@@ -9,6 +9,7 @@ import (
 	"urlshortener/config"
 	"urlshortener/db"
 	"urlshortener/internal/handler"
+	"urlshortener/internal/middleware"
 	"urlshortener/internal/repository"
 	"urlshortener/internal/service"
 )
@@ -26,6 +27,10 @@ func main() {
 	authService := service.NewAuthService(userRepo, cfg.JWTSecret)
 	authHandler := handler.NewAuthHandler(authService)
 
+	urlRepo := repository.NewURLRepository(database)
+	urlService := service.NewURLService(urlRepo, cfg.BaseURL)
+	urlHandler := handler.NewURLHandler(urlService)
+
 	r := gin.Default()
 
 	r.GET("/ping", func(c *gin.Context) {
@@ -39,6 +44,9 @@ func main() {
 		authRoutes.POST("/register", authHandler.Register)
 		authRoutes.POST("/login", authHandler.Login)
 	}
+
+	r.POST("/shorten", middleware.OptionalAuth(authService), urlHandler.Shorten)
+	r.GET("/:code", urlHandler.Redirect)
 
 	log.Printf("Starting server on port %s...", cfg.Port)
 	if err := r.Run(":" + cfg.Port); err != nil {

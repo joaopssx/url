@@ -30,7 +30,7 @@ func LoadConfig() *Config {
 
 	return &Config{
 		Port:               getEnv("PORT", "8080"),
-		DBPath:             getEnv("DB_PATH", "urlshortener.db"),
+		DBPath:             getEnv("DB_PATH", "data/urlshortener.db"),
 		BaseURL:            getEnv("BASE_URL", "http://localhost:8080"),
 		JWTSecret:          getEnv("JWT_SECRET", "supersecret"),
 		RateLimitPerMinute: rateLimit,

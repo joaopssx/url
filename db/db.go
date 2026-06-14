@@ -11,6 +11,12 @@ import (
 )
 
 func InitDB(dbPath string) (*sql.DB, error) {
+	if dir := filepath.Dir(dbPath); dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+
 	dsn := dbPath + "?_journal_mode=WAL&_synchronous=NORMAL&cache=shared"
 	db, err := sql.Open("sqlite3", dsn)
 	if err != nil {

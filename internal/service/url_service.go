@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math/big"
 	"net/url"
+	"regexp"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,34 +15,39 @@ import (
 )
 
 var (
-	ErrDuplicateURL = errors.New("duplicate url")
-	ErrNotFound     = errors.New("url not found")
-	ErrExpired      = errors.New("url expired")
-	ErrInvalidURL   = errors.New("invalid url")
-	ErrForbidden    = errors.New("forbidden")
+	ErrDuplicateURL      = errors.New("duplicate url")
+	ErrNotFound          = errors.New("url not found")
+	ErrExpired           = errors.New("url expired")
+	ErrInvalidURL        = errors.New("invalid url")
+	ErrForbidden         = errors.New("forbidden")
+	ErrInvalidCustomCode = errors.New("invalid custom code")
+	ErrCustomCodeTaken   = errors.New("custom code already taken")
 )
 
 type URLService interface {
-	Shorten(originalURL string, userID *string, expiresAt *time.Time, customCode *string) (*model.URL, error)
+	Shorten(originalURL string, userID *string, expiresAt *time.Time, customCode *string, webhookURL *string) (*model.URL, error)
 	Redirect(code, ip string) (*model.URL, error)
 	GetUserURLs(userID string) ([]model.URL, error)
 	UpdateURL(code, userID string, newURL *string, newExpiry *time.Time) (*model.URL, error)
 	DeleteURL(code, userID string) error
+	GetURL(code string) (*model.URL, error)
 }
 
 type urlService struct {
-	urlRepo repository.URLRepository
-	baseURL string
+	urlRepo        repository.URLRepository
+	webhookService WebhookService
+	baseURL        string
 }
 
-func NewURLService(urlRepo repository.URLRepository, baseURL string) URLService {
+func NewURLService(urlRepo repository.URLRepository, webhookService WebhookService, baseURL string) URLService {
 	return &urlService{
-		urlRepo: urlRepo,
-		baseURL: baseURL,
+		urlRepo:        urlRepo,
+		webhookService: webhookService,
+		baseURL:        baseURL,
 	}
 }
 
-func (s *urlService) Shorten(originalURL string, userID *string, expiresAt *time.Time, customCode *string) (*model.URL, error) {
+func (s *urlService) Shorten(originalURL string, userID *string, expiresAt *time.Time, customCode *string, webhookURL *string) (*model.URL, error) {
 	_, err := url.ParseRequestURI(originalURL)
 	if err != nil {
 		return nil, ErrInvalidURL
@@ -59,6 +65,17 @@ func (s *urlService) Shorten(originalURL string, userID *string, expiresAt *time
 
 	code := ""
 	if customCode != nil && *customCode != "" {
+		matched, _ := regexp.MatchString(`^[a-zA-Z0-9_-]{4,20}$`, *customCode)
+		if !matched {
+			return nil, ErrInvalidCustomCode
+		}
+		existing, err := s.urlRepo.FindByCode(*customCode)
+		if err != nil {
+			return nil, err
+		}
+		if existing != nil {
+			return nil, ErrCustomCodeTaken
+		}
 		code = *customCode
 	} else {
 		code, err = generateRandomCode(7)
@@ -74,6 +91,7 @@ func (s *urlService) Shorten(originalURL string, userID *string, expiresAt *time
 		UserID:      userID,
 		CreatedAt:   time.Now().UTC(),
 		ExpiresAt:   expiresAt,
+		WebhookURL:  webhookURL,
 		AccessCount: 0,
 	}
 
@@ -103,9 +121,22 @@ func (s *urlService) Redirect(code, ip string) (*model.URL, error) {
 		return nil, ErrExpired
 	}
 
+	isFirstAccess := u.AccessCount == 0
+
 	go func() {
 		_ = s.urlRepo.IncrementAccessCount(u.ID)
 		_ = s.urlRepo.RecordAccess(u.ID, ip)
+
+		if isFirstAccess && u.WebhookURL != nil && *u.WebhookURL != "" {
+			payload := WebhookPayload{
+				Event:       "first_access",
+				ShortCode:   u.ShortCode,
+				OriginalURL: u.OriginalURL,
+				AccessedAt:  time.Now().UTC(),
+				IP:          ip,
+			}
+			s.webhookService.FireWebhook(*u.WebhookURL, payload)
+		}
 	}()
 
 	return u, nil
@@ -198,4 +229,16 @@ func (s *urlService) DeleteURL(code, userID string) error {
 		return err
 	}
 	return nil
+}
+
+func (s *urlService) GetURL(code string) (*model.URL, error) {
+	u, err := s.urlRepo.FindByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil || u.DeletedAt != nil {
+		return nil, ErrNotFound
+	}
+	u.ShortURL = s.baseURL + "/" + u.ShortCode
+	return u, nil
 }

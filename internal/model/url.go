@@ -11,5 +11,6 @@ type URL struct {
 	ExpiresAt   *time.Time `json:"expires_at"`
 	AccessCount int        `json:"access_count"`
 	DeletedAt   *time.Time `json:"deleted_at"`
+	WebhookURL  *string    `json:"webhook_url,omitempty"`
 	ShortURL    string     `json:"short_url,omitempty" db:"-"`
 }

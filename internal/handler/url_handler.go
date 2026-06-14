@@ -11,16 +11,21 @@ import (
 
 type URLHandler struct {
 	urlService service.URLService
+	qrService  service.QRService
 }
 
-func NewURLHandler(urlService service.URLService) *URLHandler {
-	return &URLHandler{urlService: urlService}
+func NewURLHandler(urlService service.URLService, qrService service.QRService) *URLHandler {
+	return &URLHandler{
+		urlService: urlService,
+		qrService:  qrService,
+	}
 }
 
 type shortenRequest struct {
-	URL       string     `json:"url" binding:"required"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	Custom    *string    `json:"custom"`
+	URL        string     `json:"url" binding:"required"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	Custom     *string    `json:"custom"`
+	WebhookURL *string    `json:"webhook_url"`
 }
 
 func (h *URLHandler) Shorten(c *gin.Context) {
@@ -36,13 +41,17 @@ func (h *URLHandler) Shorten(c *gin.Context) {
 		userID = &strUID
 	}
 
-	u, err := h.urlService.Shorten(req.URL, userID, req.ExpiresAt, req.Custom)
+	u, err := h.urlService.Shorten(req.URL, userID, req.ExpiresAt, req.Custom, req.WebhookURL)
 	if err != nil {
 		switch err {
 		case service.ErrInvalidURL:
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case service.ErrDuplicateURL:
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case service.ErrInvalidCustomCode:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid custom code"})
+		case service.ErrCustomCodeTaken:
+			c.JSON(http.StatusConflict, gin.H{"error": "custom code already taken"})
 		default:
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to shorten url"})
 		}
@@ -55,6 +64,7 @@ func (h *URLHandler) Shorten(c *gin.Context) {
 		"original_url": u.OriginalURL,
 		"created_at":   u.CreatedAt,
 		"expires_at":   u.ExpiresAt,
+		"qr_url":       u.ShortURL + "/qr",
 	})
 }
 
@@ -182,4 +192,25 @@ func (h *URLHandler) UpdateURL(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, u)
+}
+
+func (h *URLHandler) GetQR(c *gin.Context) {
+	code := c.Param("code")
+	u, err := h.urlService.GetURL(code)
+	if err != nil {
+		if err == service.ErrNotFound {
+			c.JSON(http.StatusNotFound, gin.H{"error": "url not found"})
+		} else {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		}
+		return
+	}
+
+	png, err := h.qrService.GenerateQR(u.ShortURL)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to generate qr code"})
+		return
+	}
+
+	c.Data(http.StatusOK, "image/png", png)
 }

@@ -30,17 +30,17 @@ func NewURLRepository(db *sql.DB) URLRepository {
 }
 
 func (r *urlRepository) Create(url *model.URL) error {
-	query := `INSERT INTO urls (id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := r.db.Exec(query, url.ID, url.ShortCode, url.OriginalURL, url.UserID, url.CreatedAt, url.ExpiresAt, url.AccessCount, url.DeletedAt)
+	query := `INSERT INTO urls (id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at, webhook_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	_, err := r.db.Exec(query, url.ID, url.ShortCode, url.OriginalURL, url.UserID, url.CreatedAt, url.ExpiresAt, url.AccessCount, url.DeletedAt, url.WebhookURL)
 	return err
 }
 
 func (r *urlRepository) FindByCode(code string) (*model.URL, error) {
-	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at FROM urls WHERE short_code = ?`
+	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at, webhook_url FROM urls WHERE short_code = ?`
 	row := r.db.QueryRow(query, code)
 
 	var u model.URL
-	err := row.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt)
+	err := row.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt, &u.WebhookURL)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -51,11 +51,11 @@ func (r *urlRepository) FindByCode(code string) (*model.URL, error) {
 }
 
 func (r *urlRepository) FindByOriginalURLAndUser(originalURL, userID string) (*model.URL, error) {
-	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at FROM urls WHERE original_url = ? AND user_id = ?`
+	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at, webhook_url FROM urls WHERE original_url = ? AND user_id = ?`
 	row := r.db.QueryRow(query, originalURL, userID)
 
 	var u model.URL
-	err := row.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt)
+	err := row.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt, &u.WebhookURL)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
@@ -79,7 +79,7 @@ func (r *urlRepository) RecordAccess(urlID, ip string) error {
 }
 
 func (r *urlRepository) ListByUser(userID string) ([]model.URL, error) {
-	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at FROM urls WHERE user_id = ? AND deleted_at IS NULL`
+	query := `SELECT id, short_code, original_url, user_id, created_at, expires_at, access_count, deleted_at, webhook_url FROM urls WHERE user_id = ? AND deleted_at IS NULL`
 	rows, err := r.db.Query(query, userID)
 	if err != nil {
 		return nil, err
@@ -89,7 +89,7 @@ func (r *urlRepository) ListByUser(userID string) ([]model.URL, error) {
 	var urls []model.URL
 	for rows.Next() {
 		var u model.URL
-		err := rows.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt)
+		err := rows.Scan(&u.ID, &u.ShortCode, &u.OriginalURL, &u.UserID, &u.CreatedAt, &u.ExpiresAt, &u.AccessCount, &u.DeletedAt, &u.WebhookURL)
 		if err != nil {
 			return nil, err
 		}

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -33,19 +34,23 @@ func InitDB(dbPath string) (*sql.DB, error) {
 }
 
 func runMigrations(db *sql.DB) error {
-	migrationFile := filepath.Join("migrations", "001_init.sql")
-	content, err := os.ReadFile(migrationFile)
-	if err != nil {
-		log.Printf("Failed to read migration file %s: %v", migrationFile, err)
-		return err
-	}
+	migrations := []string{"001_init.sql", "002_add_webhook.sql"}
+	for _, m := range migrations {
+		migrationFile := filepath.Join("migrations", m)
+		content, err := os.ReadFile(migrationFile)
+		if err != nil {
+			log.Printf("Failed to read migration file %s: %v", migrationFile, err)
+			return err
+		}
 
-	_, err = db.Exec(string(content))
-	if err != nil {
-		log.Printf("Failed to execute migration: %v", err)
-		return err
+		_, err = db.Exec(string(content))
+		if err != nil {
+			if m == "002_add_webhook.sql" && strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
+			log.Printf("Failed to execute migration: %v", err)
+			return err
+		}
 	}
-
-	log.Println("Migrations executed successfully")
 	return nil
 }

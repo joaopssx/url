@@ -28,8 +28,10 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService)
 
 	urlRepo := repository.NewURLRepository(database)
-	urlService := service.NewURLService(urlRepo, cfg.BaseURL)
-	urlHandler := handler.NewURLHandler(urlService)
+	webhookService := service.NewWebhookService()
+	urlService := service.NewURLService(urlRepo, webhookService, cfg.BaseURL)
+	qrService := service.NewQRService()
+	urlHandler := handler.NewURLHandler(urlService, qrService)
 
 	statsService := service.NewStatsService(urlRepo)
 	statsHandler := handler.NewStatsHandler(statsService)
@@ -53,6 +55,7 @@ func main() {
 
 	r.POST("/shorten", middleware.OptionalAuth(authService), urlHandler.Shorten)
 	r.GET("/:code", urlHandler.Redirect)
+	r.GET("/:code/qr", urlHandler.GetQR)
 	r.GET("/:code/stats", statsHandler.GetStats)
 
 	protectedRoutes := r.Group("/")
